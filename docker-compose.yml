@@ -1,0 +1,45 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: genealogy_psql
+    networks:
+      - genealogy-network
+    volumes:
+      - genealogy_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT}:5432"
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+    healthcheck:
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'" ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    env_file:
+      - .env
+
+  migrate:
+    image: migrate/migrate:latest
+    container_name: genealogy-migrate
+    restart: no
+    networks:
+      - genealogy-network
+    volumes:
+      - ./migrations:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: "-path /migrations -database postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST_DOCKER}:5432/${DB_NAME}?sslmode=disable up"
+    env_file:
+      - .env
+
+networks:
+  genealogy-network:
+    driver: bridge
+
+volumes:
+  genealogy_data:
