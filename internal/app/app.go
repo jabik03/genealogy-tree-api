@@ -37,7 +37,7 @@ func Run(ctx context.Context) error {
 	slog.Info("✅ Connected to database", "db", conf.Database.Name)
 
 	// Создаём контейнер со ВСЕМИ сервисами
-	services := service.NewContainer(storage)
+	services := service.NewContainer(storage, conf.JWT.SecretKey)
 	slog.Info("✅ Services initialized")
 
 	// Передаём контейнер в роутер
