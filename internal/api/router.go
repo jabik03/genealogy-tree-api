@@ -4,6 +4,7 @@ import (
 	"GenealogyTree/internal/api/apierror"
 	"GenealogyTree/internal/api/dto"
 	"GenealogyTree/internal/api/handlers"
+	appMiddleware "GenealogyTree/internal/api/middleware" // ← Импорт нашего middleware
 	"GenealogyTree/internal/service"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ type Router struct {
 	personHandler       *handlers.PersonHandler
 	treeHandler         *handlers.TreeHandler
 	relationshipHandler *handlers.RelationshipHandler
+	authHandler         *handlers.AuthHandler
 }
 
 func NewRouter(services *service.Container) *Router {
@@ -31,6 +33,7 @@ func NewRouter(services *service.Container) *Router {
 		personHandler:       handlers.NewPersonHandler(services.Person),
 		treeHandler:         handlers.NewTreeHandler(services.Tree),
 		relationshipHandler: handlers.NewRelationshipHandler(services.Relationship),
+		authHandler:         handlers.NewAuthHandler(services.Auth),
 	}
 
 	r.initMiddleware()
@@ -45,41 +48,57 @@ func (r *Router) initMiddleware() {
 }
 
 func (r *Router) initRoutes() {
+	// ========================================
+	// Тестовый endpoints
+	// ========================================
 	r.Mux.Get("/ping", r.handler(handlers.PingHandler))
 
-	// CRUD для trees
-	r.Mux.Get("/api/trees", r.handler(r.treeHandler.GetTrees))
-	r.Mux.Post("/api/trees", r.handler(r.treeHandler.CreateTree))
-	r.Mux.Get("/api/trees/{tree_id}", r.handler(r.treeHandler.GetTree))
-	r.Mux.Put("/api/trees/{tree_id}", r.handler(r.treeHandler.UpdateTree))
-	r.Mux.Delete("/api/trees/{tree_id}", r.handler(r.treeHandler.DeleteTree))
+	// ========================================
+	// Публичные endpoints (БЕЗ токена)
+	// ========================================
+	r.Mux.Post("/api/auth/register", r.handler(r.authHandler.Register))
+	r.Mux.Post("/api/auth/login", r.handler(r.authHandler.Login))
 
-	// CRUD для persons (вложил в trees)
-	r.Mux.Get("/api/trees/{tree_id}/persons", r.handler(r.personHandler.GetPersons))
-	r.Mux.Post("/api/trees/{tree_id}/persons", r.handler(r.personHandler.CreatePerson))
-	r.Mux.Get("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.GetPerson))
-	r.Mux.Put("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.UpdatePerson))
-	r.Mux.Delete("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.DeletePerson))
+	// ========================================
+	// Защищённые endpoints (ТРЕБУЮТ токен)
+	// ========================================
+	r.Mux.Group(func(protected chi.Router) {
+		// Применяем Auth Middleware ко всем роутам в этой группе
+		protected.Use(appMiddleware.AuthMiddleware(r.services.Auth))
 
-	// Работа с Relationships
-	// Relationships - связать существующих
-	r.Mux.Post("/api/persons/{person_id}/children", r.handler(r.relationshipHandler.AddChild))
-	r.Mux.Post("/api/persons/{person_id}/parents", r.handler(r.relationshipHandler.AddParent))
+		// Auth
+		protected.Post("/api/auth/logout", r.handler(r.authHandler.Logout))
+		protected.Get("/api/profile", r.handler(r.authHandler.GetProfile))
 
-	// Relationships - создать нового + связать
-	r.Mux.Post("/api/persons/{person_id}/children/new", r.handler(r.relationshipHandler.CreateChildAndLink))
-	r.Mux.Post("/api/persons/{person_id}/parents/new", r.handler(r.relationshipHandler.CreateParentAndLink))
+		// Trees
+		protected.Get("/api/trees", r.handler(r.treeHandler.GetTrees))
+		protected.Post("/api/trees", r.handler(r.treeHandler.CreateTree))
+		protected.Get("/api/trees/{tree_id}", r.handler(r.treeHandler.GetTree))
+		protected.Put("/api/trees/{tree_id}", r.handler(r.treeHandler.UpdateTree))
+		protected.Delete("/api/trees/{tree_id}", r.handler(r.treeHandler.DeleteTree))
 
-	// Relationships - удалить связь
-	r.Mux.Delete("/api/persons/{person_id}/children/{child_id}", r.handler(r.relationshipHandler.RemoveChild))
-	r.Mux.Delete("/api/persons/{person_id}/parents/{parent_id}", r.handler(r.relationshipHandler.RemoveParent))
+		// Persons
+		protected.Get("/api/trees/{tree_id}/persons", r.handler(r.personHandler.GetPersons))
+		protected.Post("/api/trees/{tree_id}/persons", r.handler(r.personHandler.CreatePerson))
+		protected.Get("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.GetPerson))
+		protected.Put("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.UpdatePerson))
+		protected.Delete("/api/trees/{tree_id}/persons/{person_id}", r.handler(r.personHandler.DeletePerson))
 
-	// Available children/parents
-	r.Mux.Get("/api/persons/{person_id}/available-children", r.handler(r.relationshipHandler.GetAvailableChildren))
-	r.Mux.Get("/api/persons/{person_id}/available-parents", r.handler(r.relationshipHandler.GetAvailableParents))
+		// Relationships
+		protected.Post("/api/persons/{person_id}/children", r.handler(r.relationshipHandler.AddChild))
+		protected.Post("/api/persons/{person_id}/parents", r.handler(r.relationshipHandler.AddParent))
+		protected.Post("/api/persons/{person_id}/children/new", r.handler(r.relationshipHandler.CreateChildAndLink))
+		protected.Post("/api/persons/{person_id}/parents/new", r.handler(r.relationshipHandler.CreateParentAndLink))
+		protected.Delete("/api/persons/{person_id}/children/{child_id}", r.handler(r.relationshipHandler.RemoveChild))
+		protected.Delete("/api/persons/{person_id}/parents/{parent_id}", r.handler(r.relationshipHandler.RemoveParent))
 
-	// Graph endpoint
-	r.Mux.Get("/api/trees/{tree_id}/graph", r.handler(r.treeHandler.GetTreeGraph))
+		// Available
+		protected.Get("/api/persons/{person_id}/available-children", r.handler(r.relationshipHandler.GetAvailableChildren))
+		protected.Get("/api/persons/{person_id}/available-parents", r.handler(r.relationshipHandler.GetAvailableParents))
+
+		// Graph
+		protected.Get("/api/trees/{tree_id}/graph", r.handler(r.treeHandler.GetTreeGraph))
+	})
 }
 
 func (r *Router) handler(h handlerFunc) http.HandlerFunc {
@@ -91,10 +110,8 @@ func (r *Router) handler(h handlerFunc) http.HandlerFunc {
 }
 
 func (r *Router) handleError(w http.ResponseWriter, req *http.Request, err error) {
-	// Пытаюсь извлечь APIError
 	var apiErr *apierror.APIError
 	if errors.As(err, &apiErr) {
-		// Это наша кастомная ошибка
 		slog.Error("API error",
 			"method", req.Method,
 			"path", req.URL.Path,
@@ -109,7 +126,6 @@ func (r *Router) handleError(w http.ResponseWriter, req *http.Request, err error
 		return
 	}
 
-	// Неизвестная ошибка - возвращаем 500
 	slog.Error("unexpected error",
 		"method", req.Method,
 		"path", req.URL.Path,

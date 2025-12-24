@@ -7,4 +7,6 @@ var (
 	ErrTreeNotFound         = errors.New("tree not found")
 	ErrPersonNotFound       = errors.New("person not found")
 	ErrRelationshipNotFound = errors.New("relationship not found")
+	ErrUserNotFound         = errors.New("user not found")
+	ErrEmailAlreadyExists   = errors.New("email already exists")
 )

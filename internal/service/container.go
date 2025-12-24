@@ -6,14 +6,14 @@ type Container struct {
 	Person       *PersonService
 	Tree         *TreeService
 	Relationship *RelationshipService
-	// User   *UserService      // Добавим позже
+	Auth         *AuthService
 }
 
-func NewContainer(storage *repo.Storage) *Container {
+func NewContainer(storage *repo.Storage, jwtSecret string) *Container {
 	return &Container{
 		Person:       NewPersonService(storage),
 		Tree:         NewTreeService(storage),
 		Relationship: NewRelationshipService(storage),
-		// User:   NewUserService(storage),
+		Auth:         NewAuthService(storage, jwtSecret),
 	}
 }

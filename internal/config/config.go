@@ -8,6 +8,7 @@ import (
 type Config struct {
 	Database DatabaseConfig
 	ApiConf  HttpConfig
+	JWT      JWTConfig
 }
 
 type DatabaseConfig struct {
@@ -23,18 +24,30 @@ type HttpConfig struct {
 	Port string
 }
 
+type JWTConfig struct {
+	SecretKey string
+}
+
 func NewConfig() *Config {
+	secret := getEnv("JWT_SECRET_KEY", "")
+	if secret == "" {
+		panic("JWT_SECRET_KEY is required. Generate one with: openssl rand -base64 32")
+	}
+
 	return &Config{
-		DatabaseConfig{
+		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
 			User:     getEnv("DB_USER", "postgres"),
 			Password: getEnv("DB_PASSWORD", "postgres"),
 			Name:     getEnv("DB_NAME", "postgres"),
 		},
-		HttpConfig{
+		ApiConf: HttpConfig{
 			Host: getEnv("HTTP_HOST", "localhost"),
 			Port: getEnv("HTTP_PORT", "8080"),
+		},
+		JWT: JWTConfig{
+			SecretKey: secret,
 		},
 	}
 }
